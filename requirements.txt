@@ -4,5 +4,4 @@ numpy
 shap
 joblib
 folium
-geopy
 streamlit-folium
