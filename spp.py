@@ -7,12 +7,13 @@ import json
 import base64
 import folium
 from streamlit_folium import st_folium
-from geopy.distance import geodesic
+from math import radians, sin, cos, sqrt, atan2
 import time
 
 # إعداد الصفحة
 st.set_page_config(page_title="عقارميتر", layout="wide")
 
+# تحميل الفيديو والشعار وتحويلهم Base64
 def get_base64(file_path):
     with open(file_path, "rb") as f:
         return base64.b64encode(f.read()).decode()
@@ -20,7 +21,7 @@ def get_base64(file_path):
 video_base64 = get_base64("intro.mp4")
 logo_base64 = get_base64("logo.png")
 
-# شاشة المقدمة مع مؤقت تلقائي 10 ثواني
+# شاشة المقدمة مع مؤقت تلقائي 10 ثواني + زر "ابدأ"
 if "show_intro" not in st.session_state:
     st.session_state.show_intro = True
     st.session_state.start_time = time.time()
@@ -29,26 +30,43 @@ if st.session_state.show_intro:
     current_time = time.time()
     elapsed_time = current_time - st.session_state.start_time
 
-    # عرض الفيديو والشعار
+    # تصميم الفيديو والشعار والزر
     st.markdown(f"""
         <style>
-            .video-container {{ position: relative; width: 100%; height: auto; }}
-            .video-container video {{ width: 100%; height: auto; }}
+            .video-container {{
+                position: relative;
+                width: 100%;
+                height: 100vh;
+                overflow: hidden;
+            }}
+            .video-container video {{
+                width: 100%;
+                height: 100%;
+                object-fit: cover;
+            }}
             .logo-overlay {{
                 position: absolute;
-                top: -200px;
+                top: 50%;
                 left: 50%;
                 transform: translate(-50%, -50%);
                 animation: slideDown 2s forwards;
                 z-index: 10;
                 width: 370px;
-                filter: brightness(0.7) contrast(1.1);
+                filter: brightness(0.9);
             }}
             @keyframes slideDown {{
-                0% {{ top: -200px; opacity: 0; }}
+                0% {{ top: 0%; opacity: 0; }}
                 100% {{ top: 50%; opacity: 1; }}
             }}
+            .start-button-container {{
+                position: absolute;
+                bottom: 8%;
+                left: 50%;
+                transform: translateX(-50%);
+                z-index: 11;
+            }}
         </style>
+
         <div class="video-container">
             <video autoplay muted>
                 <source src="data:video/mp4;base64,{video_base64}" type="video/mp4">
@@ -57,15 +75,18 @@ if st.session_state.show_intro:
         </div>
     """, unsafe_allow_html=True)
 
-    # تحقق من الوقت للانتقال بعد 10 ثواني
+    # زر "ابدأ"
+    st.markdown("<div class='start-button-container'>", unsafe_allow_html=True)
+    if st.button("ابدأ", key="start_button"):
+        st.session_state.show_intro = False
+        st.rerun()
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    # المؤقت للانتقال التلقائي
     if elapsed_time >= 10:
         st.session_state.show_intro = False
         st.rerun()
-    else:
-        remaining = 10 - int(elapsed_time)
-        st.markdown(f"<p style='text-align:center; color:gray;'>سيتم الانتقال خلال {remaining} ثانية...</p>", unsafe_allow_html=True)
-
-else:
+else:        
     # تحميل الموديل والبيانات
     model = joblib.load("best_model.pkl")
     scaler = joblib.load("scaler.pkl")
@@ -135,11 +156,21 @@ else:
                     "بقالة": ("grocery_lat", "grocery_lon",'darkpurple', "shopping-cart")
                 }
 
+                def haversine_distance(coord1, coord2):
+                   R = 6371000  # نصف قطر الأرض بالمتر
+                   lat1, lon1 = radians(coord1[0]), radians(coord1[1])
+                   lat2, lon2 = radians(coord2[0]), radians(coord2[1])
+                   dlat = lat2 - lat1
+                   dlon = lon2 - lon1
+                   a = sin(dlat / 2)**2 + cos(lat1) * cos(lat2) * sin(dlon / 2)**2
+                   c = 2 * atan2(sqrt(a), sqrt(1 - a))
+                   return R * c
                 for name, (lat_col, lon_col, color, icon) in service_types.items():
                     service_coords = services_in_district[[lat_col, lon_col]].dropna().values
                     if len(service_coords) > 0:
-                        closest = min(service_coords, key=lambda coord: geodesic(user_location, coord).meters)
-                        closest_distance = geodesic(user_location, closest).meters
+                        closest = min(service_coords, key=lambda coord: haversine_distance(user_location, coord))
+                        closest_distance = haversine_distance(user_location, closest)
+
                         distances[name] = round(closest_distance)
 
                         folium.Marker(
@@ -300,3 +331,4 @@ else:
                     'التأثير': shap_row
                 }).sort_values(by="العامل")
                 st.line_chart(shap_df.set_index("العامل"))
+
